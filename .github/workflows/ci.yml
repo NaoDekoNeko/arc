@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -c "import yaml; yaml.safe_load(open('runner-values.yaml'))"
