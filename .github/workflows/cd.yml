@@ -1,0 +1,64 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AKS_RESOURCE_GROUP: rg-mibanco-challenge
+  AKS_CLUSTER_NAME: aks-mibanco-challenge
+  ARC_CHART_VERSION: "0.14.2"
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: AKS credentials
+        run: az aks get-credentials --resource-group "$AKS_RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --admin --overwrite-existing
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.3"
+
+      - name: Install ARC controller
+        run: |
+          helm upgrade --install arc \
+            --namespace arc-systems --create-namespace \
+            oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+            --version "$ARC_CHART_VERSION" \
+            --wait
+
+      - name: Create github-config-secret
+        run: |
+          kubectl create namespace arc-runners --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic github-config-secret \
+            --namespace=arc-runners \
+            --from-literal=github_app_id="${{ secrets.ARC_GITHUB_APP_ID }}" \
+            --from-literal=github_app_installation_id="${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}" \
+            --from-literal=github_app_private_key="${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Install runner scale set
+        run: |
+          helm upgrade --install arc-runner-set \
+            --namespace arc-runners \
+            oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+            --version "$ARC_CHART_VERSION" \
+            -f runner-values.yaml \
+            --wait
+
+      - name: Verify listener
+        run: kubectl get pods -n arc-runners

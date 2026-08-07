@@ -1,0 +1,7 @@
+githubConfigUrl: "https://github.com/NaoDekoNeko/service"
+githubConfigSecret: github-config-secret
+runnerGroup: "default"
+minRunners: 1
+maxRunners: 1
+containerMode:
+  type: "dind"
